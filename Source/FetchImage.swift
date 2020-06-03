@@ -8,7 +8,7 @@ import Nuke
 /// - WARNING: This is an API preview. It is not battle-tested yet and might signficantly change in the future.
 public final class FetchImage: ObservableObject, Identifiable {
     /// The original request.
-    public let request: ImageRequest
+    public let request: ImageRequest?
 
     /// The request to be performed if the original request fails with
     /// `networkUnavailableReason` `.constrained` (low data mode).
@@ -57,18 +57,18 @@ public final class FetchImage: ObservableObject, Identifiable {
     }
 
     /// Initializes the fetch request and immediately start loading.
-    public init(request: ImageRequest, lowDataRequest: ImageRequest? = nil, pipeline: ImagePipeline = .shared) {
+    public init(request: ImageRequest?, lowDataRequest: ImageRequest? = nil, pipeline: ImagePipeline = .shared) {
         self.request = request
         self.lowDataRequest = lowDataRequest
-        self.priority = request.priority
+        self.priority = request?.priority ?? .normal
         self.pipeline = pipeline
 
         self.fetch()
     }
 
     /// Initializes the fetch request and immediately start loading.
-    public convenience init(url: URL, pipeline: ImagePipeline = .shared) {
-        self.init(request: ImageRequest(url: url), pipeline: pipeline)
+    public convenience init(url: URL?, pipeline: ImagePipeline = .shared) {
+        self.init(request: url.map { ImageRequest(url: $0) }, pipeline: pipeline)
     }
 
     /// A convenience initializer that fetches the image with a regular URL with
@@ -90,8 +90,11 @@ public final class FetchImage: ObservableObject, Identifiable {
     /// quality image. If the first attempt fails, the next time you call `fetch`,
     /// it is going to attempt to fetch the regular quality image again.
     public func fetch() {
-        guard !isLoading, loadedImageQuality != .regular else {
-            return
+        guard
+          let request = request,
+          !isLoading,
+          loadedImageQuality != .regular else {
+              return
         }
 
         error = nil
