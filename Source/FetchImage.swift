@@ -8,11 +8,11 @@ import Nuke
 /// - WARNING: This is an API preview. It is not battle-tested yet and might signficantly change in the future.
 public final class FetchImage: ObservableObject, Identifiable {
     /// The original request.
-    public let request: ImageRequest?
+    public private(set) var request: ImageRequest?
 
     /// The request to be performed if the original request fails with
     /// `networkUnavailableReason` `.constrained` (low data mode).
-    public let lowDataRequest: ImageRequest?
+    public private(set) var lowDataRequest: ImageRequest?
 
     /// Returns the fetched image.
     ///
@@ -40,7 +40,7 @@ public final class FetchImage: ObservableObject, Identifiable {
     @Published public var progress = Progress(completed: 0, total: 0)
 
     /// Updates the priority of the task, even if the task is already running.
-    public var priority: ImageRequest.Priority {
+    public var priority: ImageRequest.Priority = .normal {
         didSet { task?.priority = priority }
     }
 
@@ -56,29 +56,45 @@ public final class FetchImage: ObservableObject, Identifiable {
         cancel()
     }
 
-    /// Initializes the fetch request and immediately start loading.
-    public init(request: ImageRequest?, lowDataRequest: ImageRequest? = nil, pipeline: ImagePipeline = .shared) {
+    /// Initializes specifying image pipeline.
+    public init(pipeline: ImagePipeline = .shared) {
+        self.pipeline = pipeline
+    }
+
+    /// Starts loading the image from image request.
+    public func fetch(request: ImageRequest?, lowDataRequest: ImageRequest? = nil) {
+        if request?.urlRequest.url != self.request?.urlRequest.url || lowDataRequest?.urlRequest.url != self.lowDataRequest?.urlRequest.url {
+            cancel()
+        }
+
         self.request = request
         self.lowDataRequest = lowDataRequest
         self.priority = request?.priority ?? .normal
-        self.pipeline = pipeline
 
         self.fetch()
     }
 
-    /// Initializes the fetch request and immediately start loading.
-    public convenience init(url: URL?, pipeline: ImagePipeline = .shared) {
-        self.init(request: url.map { ImageRequest(url: $0) }, pipeline: pipeline)
+    /// Starts loading from regular URL.
+    public func fetch(url: URL?) {
+        if url != self.request?.urlRequest.url {
+            cancel()
+        }
+
+        self.fetch(request: url.map { ImageRequest(url: $0) })
     }
 
-    /// A convenience initializer that fetches the image with a regular URL with
+    /// Fetches the image with a regular URL with
     /// constrained network access disabled, and if the download fails because of
     /// the constrained network access, uses a low data URL instead.
-    public convenience init(regularUrl: URL, lowDataUrl: URL, pipeline: ImagePipeline = .shared) {
+    public func fetch(regularUrl: URL, lowDataUrl: URL) {
+        if regularUrl != self.request?.urlRequest.url || lowDataUrl != self.lowDataRequest?.urlRequest.url {
+            cancel()
+        }
+
         var request = URLRequest(url: regularUrl)
         request.allowsConstrainedNetworkAccess = false
 
-        self.init(request: ImageRequest(urlRequest: request), lowDataRequest: ImageRequest(url: lowDataUrl), pipeline: pipeline)
+        self.fetch(request: ImageRequest(urlRequest: request), lowDataRequest: ImageRequest(url: lowDataUrl))
     }
 
     /// Starts loading the image if not already loaded and the download is not
@@ -89,12 +105,12 @@ public final class FetchImage: ObservableObject, Identifiable {
     /// to download the low-quality image. The fetcher always tries to get the high
     /// quality image. If the first attempt fails, the next time you call `fetch`,
     /// it is going to attempt to fetch the regular quality image again.
-    public func fetch() {
+    private func fetch() {
         guard
-          let request = request,
-          !isLoading,
-          loadedImageQuality != .regular else {
-              return
+            let request = request,
+            !isLoading,
+            loadedImageQuality != .regular else {
+                return
         }
 
         error = nil
